@@ -81,7 +81,7 @@ diff -Naurp kodi-21.0b1-Omega/system/keymaps/keyboard.xml kodi-21.0b1-Omega-patc
        <z>AspectRatio</z>
        <zoom>AspectRatio</zoom>
        <t>ShowSubtitles</t>
-@@ -380,11 +388,11 @@
+@@ -388,11 +396,11 @@
        <down mod="longpress">NextSubtitle</down>
        <left mod="alt">PlayerControl(tempodown)</left>
        <right mod="alt">PlayerControl(tempoup)</right>
@@ -89,6 +89,7 @@ diff -Naurp kodi-21.0b1-Omega/system/keymaps/keyboard.xml kodi-21.0b1-Omega-patc
 +      <a>AudioNextLanguage</a>
 +      <a mod="longpress">AudioDelay</a>
        <a mod="ctrl">AudioNextLanguage</a>
+       <leftquote>AudioNextLanguage</leftquote>
        <escape>Fullscreen</escape>
        <c>Playlist</c>
 -      <v>ActivateWindow(Teletext)</v>
