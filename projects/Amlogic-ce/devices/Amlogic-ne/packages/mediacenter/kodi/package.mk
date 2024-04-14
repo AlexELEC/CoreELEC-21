@@ -442,6 +442,14 @@ post_makeinstall_target() {
   mkdir -p ${INSTALL}/usr/cache/coreelec
     cp ${PKG_DIR}/config/network_wait ${INSTALL}/usr/cache/coreelec
 
+  # update addon manifest
+  ADDON_MANIFEST=${INSTALL}/usr/share/kodi/system/addon-manifest.xml
+  xmlstarlet ed -L -d "/addons/addon[text()='service.xbmc.versioncheck']" ${ADDON_MANIFEST}
+  xmlstarlet ed -L --subnode "/addons" -t elem -n "addon" -v "${ADDON_REPO_ID}" ${ADDON_MANIFEST}
+  if [ -n "${DISTRO_PKG_SETTINGS}" ]; then
+    xmlstarlet ed -L --subnode "/addons" -t elem -n "addon" -v "${DISTRO_PKG_SETTINGS_ID}" ${ADDON_MANIFEST}
+  fi
+
   # addons AE
   if [ -d "${ROOT}/addons" ]; then
     mkdir -p ${INSTALL}/usr/share/kodi/addons
@@ -472,14 +480,6 @@ post_makeinstall_target() {
   # keyboard.xml as symlink
   mv -f ${INSTALL}/usr/share/kodi/system/keymaps/keyboard.xml ${INSTALL}/usr/share/kodi/config
   ln -sf /storage/.kodi/userdata/keymaps/keyboard.xml ${INSTALL}/usr/share/kodi/system/keymaps/keyboard.xml
-
-  # update addon manifest
-  ADDON_MANIFEST=${INSTALL}/usr/share/kodi/system/addon-manifest.xml
-  xmlstarlet ed -L -d "/addons/addon[text()='service.xbmc.versioncheck']" ${ADDON_MANIFEST}
-  xmlstarlet ed -L --subnode "/addons" -t elem -n "addon" -v "${ADDON_REPO_ID}" ${ADDON_MANIFEST}
-  if [ -n "${DISTRO_PKG_SETTINGS}" ]; then
-    xmlstarlet ed -L --subnode "/addons" -t elem -n "addon" -v "${DISTRO_PKG_SETTINGS_ID}" ${ADDON_MANIFEST}
-  fi
 
   # more binaddons cross compile badness meh
   sed -e "s:INCLUDE_DIR /usr/include/kodi:INCLUDE_DIR ${SYSROOT_PREFIX}/usr/include/kodi:g" \
