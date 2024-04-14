@@ -366,6 +366,7 @@ post_makeinstall_target() {
     cp ${PKG_DIR}/scripts/kodi-after ${INSTALL}/usr/lib/kodi
     cp ${PKG_DIR}/scripts/kodi-safe-mode ${INSTALL}/usr/lib/kodi
     cp ${PKG_DIR}/scripts/kodi.sh ${INSTALL}/usr/lib/kodi
+    cp ${PKG_DIR}/scripts/kodi-tvlink ${INSTALL}/usr/lib/kodi
 
     # Configure safe mode triggers - default 5 restarts within 900 seconds/15 minutes
     sed -e "s|@KODI_MAX_RESTARTS@|${KODI_MAX_RESTARTS:-5}|g" \
@@ -441,6 +442,37 @@ post_makeinstall_target() {
   mkdir -p ${INSTALL}/usr/cache/coreelec
     cp ${PKG_DIR}/config/network_wait ${INSTALL}/usr/cache/coreelec
 
+  # addons AE
+  if [ -d "${ROOT}/addons" ]; then
+    mkdir -p ${INSTALL}/usr/share/kodi/addons
+    for i in `ls ${ROOT}/addons | grep zip`
+    do
+      unzip ${ROOT}/addons/$i -d ${INSTALL}/usr/share/kodi/addons
+      xmlstarlet ed -L --subnode "/addons" -t elem -n "addon" -v "`unzip -p ${ROOT}/addons/$i */addon.xml | awk -F= '/addon\ id=/ { print $2 }' | awk -F'"' '{ print $2 }'`" ${ADDON_MANIFEST}
+    done
+  fi
+  if [ -d "${PROJECT_DIR}/${PROJECT}/addons" ]; then
+    mkdir -p ${INSTALL}/usr/share/kodi/addons
+    for i in `ls ${PROJECT_DIR}/${PROJECT}/addons | grep zip`
+    do
+      unzip ${PROJECT_DIR}/${PROJECT}/addons/$i -d ${INSTALL}/usr/share/kodi/addons
+      xmlstarlet ed -L --subnode "/addons" -t elem -n "addon" -v "`unzip -p ${PROJECT_DIR}/${PROJECT}/addons/$i */addon.xml | awk -F= '/addon\ id=/ { print $2 }' | awk -F'"' '{ print $2 }'`" ${ADDON_MANIFEST}
+    done
+  fi
+
+  # install addon configs AE
+  if [ -d "${PKG_DIR}/config/script.skinshortcuts" ]; then
+      cp -R ${PKG_DIR}/config/script.skinshortcuts ${INSTALL}/usr/share/kodi/config
+  fi
+
+  if [ -d "${PKG_DIR}/config/skin.aeon.nox.silvo.ae" ]; then
+      cp -R ${PKG_DIR}/config/skin.aeon.nox.silvo.ae ${INSTALL}/usr/share/kodi/config
+  fi
+
+  # keyboard.xml as symlink
+  mv -f ${INSTALL}/usr/share/kodi/system/keymaps/keyboard.xml ${INSTALL}/usr/share/kodi/config
+  ln -sf /storage/.kodi/userdata/keymaps/keyboard.xml ${INSTALL}/usr/share/kodi/system/keymaps/keyboard.xml
+
   # update addon manifest
   ADDON_MANIFEST=${INSTALL}/usr/share/kodi/system/addon-manifest.xml
   xmlstarlet ed -L -d "/addons/addon[text()='service.xbmc.versioncheck']" ${ADDON_MANIFEST}
@@ -476,4 +508,5 @@ post_install() {
   enable_service kodi.service
   enable_service kodi-lirc-suspend.service
   enable_service kodi-cleanpackagecache.service
+  enable_service kodi-tvlink.service
 }
