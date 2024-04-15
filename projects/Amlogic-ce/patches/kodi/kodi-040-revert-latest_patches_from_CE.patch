@@ -1,0 +1,699 @@
+diff -Naurp kodi/xbmc/cores/VideoPlayer/DVDCodecs/Video/AMLCodec.cpp kodi-patch/xbmc/cores/VideoPlayer/DVDCodecs/Video/AMLCodec.cpp
+--- kodi/xbmc/cores/VideoPlayer/DVDCodecs/Video/AMLCodec.cpp	2024-04-15 08:11:27.860675620 +0000
++++ kodi-patch/xbmc/cores/VideoPlayer/DVDCodecs/Video/AMLCodec.cpp	2024-04-15 08:12:11.588343742 +0000
+@@ -1816,6 +1816,8 @@ CAMLCodec::CAMLCodec(CProcessInfo &proce
+   , m_bufferIndex(-1)
+   , m_state(0)
+   , m_processInfo(processInfo)
++  , m_is_dv_p7_mel(false)
++  , m_dolby_vision_wait_delay(0)
+ {
+   am_private = new am_private_t;
+   memset(am_private, 0, sizeof(am_private_t));
+@@ -1852,7 +1854,7 @@ int CAMLCodec::GetAmlDuration() const
+   return am_private ? (am_private->video_rate * PTS_FREQ) / UNIT_FREQ : 0;
+ };
+ 
+-bool CAMLCodec::OpenDecoder(CDVDStreamInfo &hints, enum ELType dovi_el_type)
++bool CAMLCodec::OpenDecoder(CDVDStreamInfo &hints)
+ {
+   m_speed = DVD_PLAYSPEED_NORMAL;
+   m_drain = false;
+@@ -1867,7 +1869,6 @@ bool CAMLCodec::OpenDecoder(CDVDStreamIn
+   m_hints.pClock = hints.pClock;
+   m_tp_last_frame = std::chrono::system_clock::now();
+   m_decoder_timeout = CServiceBroker::GetSettingsComponent()->GetAdvancedSettings()->m_videoDecoderTimeout;
+-  m_buffer_level_ready = false;
+ 
+   if (!OpenAmlVideo(hints))
+   {
+@@ -1977,8 +1978,8 @@ bool CAMLCodec::OpenDecoder(CDVDStreamIn
+     CLog::Log(LOGDEBUG, "CAMLCodec::OpenDecoder hdr type: {}", hdrType);
+ 
+   if (hints.hdrType == StreamHdrType::HDR_TYPE_DOLBYVISION)
+-    CLog::Log(LOGDEBUG, "CAMLCodec::OpenDecoder DOVI: version {:d}.{:d}, profile {:d}, el type {:d}",
+-      hints.dovi.dv_version_major, hints.dovi.dv_version_minor, hints.dovi.dv_profile, dovi_el_type);
++    CLog::Log(LOGDEBUG, "CAMLCodec::OpenDecoder DOVI: version {:d}.{:d}, profile {:d}",
++      hints.dovi.dv_version_major, hints.dovi.dv_version_minor, hints.dovi.dv_profile);
+ 
+   m_processInfo.SetVideoDAR(hints.aspect);
+   CLog::Log(LOGDEBUG, "CAMLCodec::OpenDecoder decoder timeout: {:d}s",
+@@ -2028,15 +2029,19 @@ bool CAMLCodec::OpenDecoder(CDVDStreamIn
+     }
+ 
+     am_private->gcodec.dv_enable = 1;
+-    if ((hints.dovi.dv_profile == 4 || hints.dovi.dv_profile == 7) && CServiceBroker::GetSettingsComponent()->GetSettings()->GetInt(
++    if (!m_is_dv_p7_mel && hints.dovi.dv_profile == 7 && CServiceBroker::GetSettingsComponent()->GetSettings()->GetInt(
+         CSettings::SETTING_VIDEOPLAYER_CONVERTDOVI) == 0)
+     {
+-      if (dovi_el_type != ELType::TYPE_MEL) // use stream path if not MEL
++      CSysfsPath amdolby_vision_debug{"/sys/class/amdolby_vision/debug"};
++      if (amdolby_vision_debug.Exists())
++        amdolby_vision_debug.Set("enable_fel 1");
++      am_private->gcodec.dec_mode  = STREAM_TYPE_STREAM;
++
++      CSysfsPath dolby_vision_wait_delay{"/sys/module/amdolby_vision/parameters/dolby_vision_wait_delay"};
++      if (dolby_vision_wait_delay.Exists())
+       {
+-        CSysfsPath amdolby_vision_debug{"/sys/class/amdolby_vision/debug"};
+-        if (amdolby_vision_debug.Exists())
+-          amdolby_vision_debug.Set("enable_fel 1");
+-        am_private->gcodec.dec_mode  = STREAM_TYPE_STREAM;
++        m_dolby_vision_wait_delay = dolby_vision_wait_delay.Get<unsigned int>().value();
++        CLog::Log(LOGDEBUG, "CAMLCodec::OpenDecoder DoVi P7 MEL detection frame delay got set to {:d} frames", m_dolby_vision_wait_delay);
+       }
+     }
+   }
+@@ -2392,12 +2397,6 @@ bool CAMLCodec::AddData(uint8_t *pData,
+   int data_len, free_len;
+   int chunk_size = calc_chunk_size(iSize);
+   float new_buffer_level = GetBufferLevel(chunk_size, data_len, free_len);
+-  bool streambuffer(am_private->gcodec.dec_mode == STREAM_TYPE_STREAM);
+-
+-  if (!m_buffer_level_ready)
+-    m_buffer_level_ready = (streambuffer ? (new_buffer_level > 90.0f) : (new_buffer_level > 5.0f));
+-
+-  m_minimum_buffer_level = (streambuffer ? 10.0f : 5.0f);
+ 
+   if (!m_opened || !pData || free_len == 0 || new_buffer_level >= 100.0f)
+   {
+@@ -2632,17 +2631,13 @@ CDVDVideoCodec::VCReturn CAMLCodec::GetP
+   float buffer_level = GetBufferLevel();
+   std::chrono::milliseconds elapsed_since_last_frame(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()
+     - m_tp_last_frame).count());
+-  bool streambuffer(am_private->gcodec.dec_mode == STREAM_TYPE_STREAM);
+ 
+   if (!m_opened)
+     return CDVDVideoCodec::VC_ERROR;
+ 
+-  if (!m_drain && m_buffer_level_ready && buffer_level > m_minimum_buffer_level && (ret = DequeueBuffer()) == 0)
++  if ((!m_drain && buffer_level > 5.0f) && (ret = DequeueBuffer()) == 0)
+   {
+     pVideoPicture->iFlags = 0;
+-
+-    m_minimum_buffer_level = (streambuffer ? m_minimum_buffer_level : 0.0f);
+-
+     m_tp_last_frame = std::chrono::system_clock::now();
+ 
+     if (m_last_pts == DVD_NOPTS_VALUE)
+@@ -2662,11 +2657,26 @@ CDVDVideoCodec::VCReturn CAMLCodec::GetP
+     CLog::Log(LOGDEBUG, LOGVIDEO, "CAMLCodec::GetPicture: index: {:d}, pts: {:.3f}, dur:{:.3f}ms ar:{:.2f} elf:{:d}ms",
+       m_bufferIndex, pVideoPicture->pts / DVD_TIME_BASE, pVideoPicture->iDuration / 1000, m_hints.aspect, elapsed_since_last_frame.count());
+ 
++    if (m_dolby_vision_wait_delay > 0 && !m_is_dv_p7_mel)
++    {
++      m_dolby_vision_wait_delay--;
++      CSysfsPath is_mel{"/sys/module/amdolby_vision/parameters/is_mel"};
++      if (is_mel.Exists())
++      {
++        if (is_mel.Get<char>().value() == 'Y')
++        {
++          CLog::Log(LOGDEBUG, LOGVIDEO, "CAMLCodec::GetPicture: DoVi P7 MEL content detected, request to reopen decoder");
++          m_is_dv_p7_mel = true;
++          return CDVDVideoCodec::VC_REOPEN;
++        }
++      }
++    }
++
+     return CDVDVideoCodec::VC_PICTURE;
+   }
+   else if (m_drain)
+     return CDVDVideoCodec::VC_EOF;
+-  else if (buffer_level > (streambuffer ? 100.0f : 10.0f))
++  else if (buffer_level > 10.0f)
+     return CDVDVideoCodec::VC_NONE;
+   else if (ret != EAGAIN || elapsed_since_last_frame > std::chrono::seconds(m_decoder_timeout))
+   {
+diff -Naurp kodi/xbmc/cores/VideoPlayer/DVDCodecs/Video/AMLCodec.h kodi-patch/xbmc/cores/VideoPlayer/DVDCodecs/Video/AMLCodec.h
+--- kodi/xbmc/cores/VideoPlayer/DVDCodecs/Video/AMLCodec.h	2024-04-15 08:11:27.860675620 +0000
++++ kodi-patch/xbmc/cores/VideoPlayer/DVDCodecs/Video/AMLCodec.h	2024-04-15 08:12:11.588343742 +0000
+@@ -13,7 +13,6 @@
+ #include "cores/IPlayer.h"
+ #include "windowing/Resolution.h"
+ #include "rendering/RenderSystem.h"
+-#include "utils/BitstreamConverter.h"
+ #include "utils/Geometry.h"
+ 
+ #include <deque>
+@@ -63,7 +62,7 @@ public:
+   CAMLCodec(CProcessInfo &processInfo);
+   virtual ~CAMLCodec();
+ 
+-  bool          OpenDecoder(CDVDStreamInfo &hints, enum ELType dovi_el_type);
++  bool          OpenDecoder(CDVDStreamInfo &hints);
+   bool          Enable_vadj1();
+   void          CloseDecoder();
+   void          Reset();
+@@ -110,6 +109,8 @@ private:
+   uint64_t         m_cur_pts;
+   uint64_t         m_last_pts;
+   uint32_t         m_bufferIndex;
++  bool             m_is_dv_p7_mel;
++  uint32_t         m_dolby_vision_wait_delay;
+ 
+   CRect            m_dst_rect;
+   CRect            m_display_rect;
+@@ -137,7 +138,4 @@ private:
+   CProcessInfo &m_processInfo;
+   int m_decoder_timeout;
+   std::chrono::time_point<std::chrono::system_clock> m_tp_last_frame;
+-
+-  bool            m_buffer_level_ready;
+-  float           m_minimum_buffer_level;
+ };
+diff -Naurp kodi/xbmc/cores/VideoPlayer/DVDCodecs/Video/DVDVideoCodecAmlogic.cpp kodi-patch/xbmc/cores/VideoPlayer/DVDCodecs/Video/DVDVideoCodecAmlogic.cpp
+--- kodi/xbmc/cores/VideoPlayer/DVDCodecs/Video/DVDVideoCodecAmlogic.cpp	2024-04-15 08:11:27.860675620 +0000
++++ kodi-patch/xbmc/cores/VideoPlayer/DVDCodecs/Video/DVDVideoCodecAmlogic.cpp	2024-04-15 08:12:11.588343742 +0000
+@@ -15,6 +15,7 @@
+ #include "AMLCodec.h"
+ #include "ServiceBroker.h"
+ #include "utils/AMLUtils.h"
++#include "utils/BitstreamConverter.h"
+ #include "utils/log.h"
+ #include "settings/AdvancedSettings.h"
+ #include "settings/Settings.h"
+@@ -378,7 +379,6 @@ bool CDVDVideoCodecAmlogic::AddData(cons
+ 
+   uint8_t *pData(packet.pData);
+   int iSize(packet.iSize);
+-  enum ELType dovi_el_type = ELType::TYPE_NONE;
+ 
+   if (pData)
+   {
+@@ -394,7 +394,6 @@ bool CDVDVideoCodecAmlogic::AddData(cons
+       }
+       pData = m_bitstream->GetConvertBuffer();
+       iSize = m_bitstream->GetConvertSize();
+-      dovi_el_type = m_bitstream->GetDoviElType();
+     }
+     else if (!m_has_keyframe && m_bitparser)
+     {
+@@ -414,7 +413,7 @@ bool CDVDVideoCodecAmlogic::AddData(cons
+         m_hints.ptsinvalid = true;
+ 
+       CLog::Log(LOGINFO, "{}::{} Open decoder: fps:{:d}/{:d}", __MODULE_NAME__, __FUNCTION__, m_hints.fpsrate, m_hints.fpsscale);
+-      if (m_Codec && !m_Codec->OpenDecoder(m_hints, dovi_el_type))
++      if (m_Codec && !m_Codec->OpenDecoder(m_hints))
+         CLog::Log(LOGERROR, "{}: Failed to open Amlogic Codec", __MODULE_NAME__);
+ 
+       m_videoBufferPool = std::shared_ptr<CAMLVideoBufferPool>(new CAMLVideoBufferPool());
+@@ -435,6 +434,12 @@ void CDVDVideoCodecAmlogic::Reset(void)
+     m_bitstream->ResetStartDecode();
+ }
+ 
++void CDVDVideoCodecAmlogic::Reopen(void)
++{
++  if (m_Codec && !m_Codec->OpenDecoder(m_hints))
++    CLog::Log(LOGERROR, "{}: Failed to reopen Amlogic Codec", __MODULE_NAME__);
++}
++
+ CDVDVideoCodec::VCReturn CDVDVideoCodecAmlogic::GetPicture(VideoPicture* pVideoPicture)
+ {
+   if (!m_Codec)
+@@ -442,7 +447,11 @@ CDVDVideoCodec::VCReturn CDVDVideoCodecA
+ 
+   VCReturn retVal = m_Codec->GetPicture(&m_videobuffer);
+ 
+-  if (retVal == VC_PICTURE)
++  if (retVal == VC_REOPEN)
++  {
++    m_Codec->CloseDecoder();
++  }
++  else if (retVal == VC_PICTURE)
+   {
+     pVideoPicture->SetParams(m_videobuffer);
+ 
+diff -Naurp kodi/xbmc/cores/VideoPlayer/DVDCodecs/Video/DVDVideoCodecAmlogic.h kodi-patch/xbmc/cores/VideoPlayer/DVDCodecs/Video/DVDVideoCodecAmlogic.h
+--- kodi/xbmc/cores/VideoPlayer/DVDCodecs/Video/DVDVideoCodecAmlogic.h	2024-04-15 08:11:27.860675620 +0000
++++ kodi-patch/xbmc/cores/VideoPlayer/DVDCodecs/Video/DVDVideoCodecAmlogic.h	2024-04-15 08:12:11.588343742 +0000
+@@ -12,7 +12,6 @@
+ #include "DVDStreamInfo.h"
+ #include "threads/CriticalSection.h"
+ #include "cores/VideoPlayer/Buffers/VideoBuffer.h"
+-#include "utils/BitstreamConverter.h"
+ 
+ #include <set>
+ #include <atomic>
+@@ -71,6 +70,7 @@ public:
+   virtual bool Open(CDVDStreamInfo &hints, CDVDCodecOptions &options) override;
+   virtual bool AddData(const DemuxPacket &packet) override;
+   virtual void Reset() override;
++  virtual void Reopen() override;
+   virtual VCReturn GetPicture(VideoPicture* pVideoPicture) override;
+   virtual void SetSpeed(int iSpeed) override;
+   virtual void SetCodecControl(int flags) override;
+diff -Naurp kodi/xbmc/cores/VideoPlayer/DVDMessageQueue.cpp kodi-patch/xbmc/cores/VideoPlayer/DVDMessageQueue.cpp
+--- kodi/xbmc/cores/VideoPlayer/DVDMessageQueue.cpp	2024-04-15 08:11:27.864675589 +0000
++++ kodi-patch/xbmc/cores/VideoPlayer/DVDMessageQueue.cpp	2024-04-15 08:12:11.592343712 +0000
+@@ -307,7 +307,7 @@ void CDVDMessageQueue::WaitUntilEmpty()
+   }
+ }
+ 
+-int CDVDMessageQueue::GetLevel(bool data_level) const
++int CDVDMessageQueue::GetLevel() const
+ {
+   std::unique_lock<CCriticalSection> lock(m_section);
+ 
+@@ -316,9 +316,9 @@ int CDVDMessageQueue::GetLevel(bool data
+   if (m_iDataSize == 0)
+     return 0;
+ 
+-  if (IsDataBased() || data_level)
++  if (IsDataBased())
+   {
+-    return std::min((uint64_t)100, 100 * m_iDataSize / m_iMaxDataSize);
++    return std::min(100, 100 * m_iDataSize / m_iMaxDataSize);
+   }
+ 
+   int level = std::min(100.0, ceil(100.0 * m_TimeSize * (m_TimeFront - m_TimeBack) / DVD_TIME_BASE ));
+diff -Naurp kodi/xbmc/cores/VideoPlayer/DVDMessageQueue.h kodi-patch/xbmc/cores/VideoPlayer/DVDMessageQueue.h
+--- kodi/xbmc/cores/VideoPlayer/DVDMessageQueue.h	2024-04-15 08:11:27.864675589 +0000
++++ kodi-patch/xbmc/cores/VideoPlayer/DVDMessageQueue.h	2024-04-15 08:12:11.592343712 +0000
+@@ -80,8 +80,8 @@ public:
+   void WaitUntilEmpty();
+ 
+   // non messagequeue related functions
+-  bool IsFull() const { return GetLevel(true) == 100; }
+-  int GetLevel(bool data_level = false) const;
++  bool IsFull() const { return GetLevel() == 100; }
++  int GetLevel() const;
+ 
+   void SetMaxDataSize(int iMaxDataSize) { m_iMaxDataSize = iMaxDataSize; }
+   void SetMaxTimeSize(double sec) { m_TimeSize  = 1.0 / std::max(1.0, sec); }
+@@ -102,14 +102,15 @@ private:
+   bool m_bInitialized;
+   bool m_drain = false;
+ 
+-  uint64_t m_iDataSize;
++  int m_iDataSize;
+   double m_TimeFront;
+   double m_TimeBack;
+   double m_TimeSize;
+ 
+-  uint64_t m_iMaxDataSize;
++  int m_iMaxDataSize;
+   std::string m_owner;
+ 
+   std::list<DVDMessageListItem> m_messages;
+   std::list<DVDMessageListItem> m_prioMessages;
+ };
++
+diff -Naurp kodi/xbmc/cores/VideoPlayer/VideoPlayerAudio.cpp kodi-patch/xbmc/cores/VideoPlayer/VideoPlayerAudio.cpp
+--- kodi/xbmc/cores/VideoPlayer/VideoPlayerAudio.cpp	2024-04-15 08:11:27.868675559 +0000
++++ kodi-patch/xbmc/cores/VideoPlayer/VideoPlayerAudio.cpp	2024-04-15 08:12:11.596343682 +0000
+@@ -62,7 +62,7 @@ CVideoPlayerAudio::CVideoPlayerAudio(CDV
+   m_maxspeedadjust = 0.0;
+ 
+   // 18 MB allows max bitrate of 18 Mbit/s (TrueHD max peak) during 8 seconds
+-  m_messageQueue.SetMaxDataSize(32 * 1024 * 1024);
++  m_messageQueue.SetMaxDataSize(18 * 1024 * 1024);
+   m_messageQueue.SetMaxTimeSize(8.0);
+   m_disconAdjustTimeMs = processInfo.GetMaxPassthroughOffSyncDuration();
+ }
+@@ -202,7 +202,7 @@ void CVideoPlayerAudio::OnStartup()
+ void CVideoPlayerAudio::UpdatePlayerInfo()
+ {
+   std::ostringstream s;
+-  s << "aq:"     << std::setw(2) << std::min(99,m_messageQueue.GetLevel()) << "% (" << std::setw(2) << std::min(99,m_messageQueue.GetLevel(true)) << "%)";
++  s << "aq:"     << std::setw(2) << std::min(99,m_messageQueue.GetLevel()) << "%";
+   s << ", Kb/s:" << std::fixed << std::setprecision(2) << m_audioStats.GetBitrate() / 1024.0;
+   s << ", ac:"   << m_processInfo.GetAudioDecoderName().c_str();
+   if (!m_info.passthrough)
+diff -Naurp kodi/xbmc/cores/VideoPlayer/VideoPlayerVideo.cpp kodi-patch/xbmc/cores/VideoPlayer/VideoPlayerVideo.cpp
+--- kodi/xbmc/cores/VideoPlayer/VideoPlayerVideo.cpp	2024-04-15 08:11:27.868675559 +0000
++++ kodi-patch/xbmc/cores/VideoPlayer/VideoPlayerVideo.cpp	2024-04-15 08:12:11.596343682 +0000
+@@ -71,7 +71,7 @@ CVideoPlayerVideo::CVideoPlayerVideo(CDV
+   m_fForcedAspectRatio = 0;
+ 
+   // 128 MB allows max bitrate of 128 Mbit/s (e.g. UHD Blu-Ray) during 8 seconds
+-  m_messageQueue.SetMaxDataSize(40 * 1024 * 1024);
++  m_messageQueue.SetMaxDataSize(128 * 1024 * 1024);
+   m_messageQueue.SetMaxTimeSize(8.0);
+ 
+   m_iDroppedFrames = 0;
+@@ -935,7 +935,6 @@ CVideoPlayerVideo::EOutputState CVideoPl
+   if (!m_renderManager.Configure(*pPicture,
+                                 static_cast<float>(config_framerate),
+                                 orientation,
+-                                m_hints.hdrType,
+                                 m_pVideoCodec->GetAllowedReferences()))
+   {
+     CLog::Log(LOGERROR, "{} - failed to configure renderer", __FUNCTION__);
+@@ -1024,7 +1023,7 @@ std::string CVideoPlayerVideo::GetPlayer
+   int width, height;
+   m_processInfo.GetVideoDimensions(width, height);
+   std::ostringstream s;
+-  s << "vq:"   << std::setw(2) << std::min(99, m_messageQueue.GetLevel()) << "% (" << std::setw(2) << std::min(99, m_messageQueue.GetLevel(true)) << "%)";
++  s << "vq:"   << std::setw(2) << std::min(99, m_processInfo.GetLevelVQ()) << "%";
+   s << ", Mb/s:" << std::fixed << std::setprecision(2) << (double)GetVideoBitrate() / (1024.0*1024.0);
+   s << ", dc:"   << m_processInfo.GetVideoDecoderName().c_str();
+   s << ", " << width << "x" << height << (m_processInfo.GetVideoInterlaced() ? "i" : "p") << " [" << std::setprecision(2) << m_processInfo.GetVideoDAR() << "]@" << std::fixed << std::setprecision(3) << m_processInfo.GetVideoFps() << ", deint:" << m_processInfo.GetVideoDeintMethod();
+diff -Naurp kodi/xbmc/cores/VideoPlayer/VideoRenderers/RenderManager.cpp kodi-patch/xbmc/cores/VideoPlayer/VideoRenderers/RenderManager.cpp
+--- kodi/xbmc/cores/VideoPlayer/VideoRenderers/RenderManager.cpp	2024-04-15 08:11:27.872675528 +0000
++++ kodi-patch/xbmc/cores/VideoPlayer/VideoRenderers/RenderManager.cpp	2024-04-15 08:12:11.600343652 +0000
+@@ -79,8 +79,7 @@ void CRenderManager::SetVideoSettings(co
+   }
+ }
+ 
+-bool CRenderManager::Configure(const VideoPicture& picture, float fps, unsigned int orientation,
+-  StreamHdrType hdrType, int buffers)
++bool CRenderManager::Configure(const VideoPicture& picture, float fps, unsigned int orientation, int buffers)
+ {
+ 
+   // check if something has changed
+@@ -96,7 +95,6 @@ bool CRenderManager::Configure(const Vid
+         m_dheight == picture.iDisplayHeight &&
+         m_fps == fps &&
+         m_orientation == orientation &&
+-        m_hdrType == hdrType &&
+         m_stereomode == picture.stereoMode &&
+         m_NumberBuffers == buffers &&
+         m_pRenderer != nullptr &&
+@@ -108,8 +106,8 @@ bool CRenderManager::Configure(const Vid
+ 
+   CLog::Log(LOGDEBUG,
+             "CRenderManager::Configure - change configuration. {}x{}. display: {}x{}. framerate: "
+-            "{:4.2f} hdrType: {}.",
+-            picture.iWidth, picture.iHeight, picture.iDisplayWidth, picture.iDisplayHeight, fps, CStreamDetails::HdrTypeToString(hdrType));
++            "{:4.2f}.",
++            picture.iWidth, picture.iHeight, picture.iDisplayWidth, picture.iDisplayHeight, fps);
+ 
+   // make sure any queued frame was fully presented
+   {
+@@ -137,7 +135,6 @@ bool CRenderManager::Configure(const Vid
+     m_dheight = picture.iDisplayHeight;
+     m_fps = fps;
+     m_orientation = orientation;
+-    m_hdrType = hdrType;
+     m_stereomode = picture.stereoMode;
+     m_NumberBuffers  = buffers;
+     m_renderState = STATE_CONFIGURING;
+@@ -408,8 +405,6 @@ void CRenderManager::UnInit()
+   m_width = 0;
+   m_height = 0;
+   m_bRenderGUI = false;
+-  m_hdrType = StreamHdrType::HDR_TYPE_NONE;
+-  CServiceBroker::GetWinSystem()->GetGfxContext().SetHDRType(m_hdrType);
+   RemoveCaptures();
+ 
+   m_initEvent.Set();
+@@ -902,7 +897,6 @@ void CRenderManager::UpdateResolution()
+       if (CServiceBroker::GetSettingsComponent()->GetSettings()->GetInt(CSettings::SETTING_VIDEOPLAYER_ADJUSTREFRESHRATE) != ADJUST_REFRESHRATE_OFF && m_fps > 0.0f)
+       {
+         RESOLUTION res = CResolutionUtils::ChooseBestResolution(m_fps, m_width, m_height, !m_stereomode.empty());
+-        CServiceBroker::GetWinSystem()->GetGfxContext().SetHDRType(m_hdrType);
+         CServiceBroker::GetWinSystem()->GetGfxContext().SetVideoResolution(res, false);
+         UpdateLatencyTweak();
+         if (m_pRenderer)
+diff -Naurp kodi/xbmc/cores/VideoPlayer/VideoRenderers/RenderManager.h kodi-patch/xbmc/cores/VideoPlayer/VideoRenderers/RenderManager.h
+--- kodi/xbmc/cores/VideoPlayer/VideoRenderers/RenderManager.h	2024-04-15 08:11:27.872675528 +0000
++++ kodi-patch/xbmc/cores/VideoPlayer/VideoRenderers/RenderManager.h	2024-04-15 08:12:11.600343652 +0000
+@@ -17,7 +17,6 @@
+ #include "threads/Event.h"
+ #include "threads/SystemClock.h"
+ #include "utils/Geometry.h"
+-#include "utils/StreamDetails.h"
+ #include "windowing/Resolution.h"
+ 
+ #include <atomic>
+@@ -95,7 +94,7 @@ public:
+ 
+   int GetSkippedFrames()  { return m_QueueSkip; }
+ 
+-  bool Configure(const VideoPicture& picture, float fps, unsigned int orientation, StreamHdrType hdrType, int buffers = 0);
++  bool Configure(const VideoPicture& picture, float fps, unsigned int orientation, int buffers = 0);
+   bool AddVideoPicture(const VideoPicture& picture, volatile std::atomic_bool& bStop, EINTERLACEMETHOD deintMethod, bool wait);
+   void AddOverlay(std::shared_ptr<CDVDOverlay> o, double pts);
+   void ShowVideo(bool enable);
+@@ -210,7 +209,6 @@ protected:
+   unsigned int m_dheight = 0;
+   float m_fps = 0.0;
+   unsigned int m_orientation = 0;
+-  StreamHdrType m_hdrType = StreamHdrType::HDR_TYPE_NONE;
+   int m_NumberBuffers = 0;
+   std::string m_stereomode;
+ 
+diff -Naurp kodi/xbmc/utils/BitstreamConverter.cpp kodi-patch/xbmc/utils/BitstreamConverter.cpp
+--- kodi/xbmc/utils/BitstreamConverter.cpp	2024-04-15 08:11:27.976674737 +0000
++++ kodi-patch/xbmc/utils/BitstreamConverter.cpp	2024-04-15 08:12:11.704342864 +0000
+@@ -17,7 +17,6 @@
+ #include "BitstreamConverter.h"
+ #include "BitstreamReader.h"
+ #include "BitstreamWriter.h"
+-#include "utils/StringUtils.h"
+ #include "HevcSei.h"
+ 
+ #include <algorithm>
+@@ -302,29 +301,6 @@ done:
+ 
+   return rpu_data;
+ }
+-
+-static enum ELType get_dovi_el_type(uint8_t* buf, uint32_t nal_size)
+-{
+-  DoviRpuOpaque* rpu = dovi_parse_unspec62_nalu(buf, nal_size);
+-  const DoviRpuDataHeader* header = dovi_rpu_get_header(rpu);
+-  enum ELType el_type = ELType::TYPE_NONE;
+-
+-  if (header && (header->guessed_profile == 4 || header->guessed_profile == 7))
+-  {
+-    if (header->el_type)
+-    {
+-      if (StringUtils::EqualsNoCase(header->el_type, "FEL"))
+-        el_type = ELType::TYPE_FEL;
+-      else if (StringUtils::EqualsNoCase(header->el_type, "MEL"))
+-        el_type = ELType::TYPE_MEL;
+-    }
+-  }
+-
+-  dovi_rpu_free_header(header);
+-  dovi_rpu_free(rpu);
+-
+-  return el_type;
+-}
+ #endif
+ 
+ ////////////////////////////////////////////////////////////////////////////////////////////
+@@ -395,7 +371,6 @@ CBitstreamConverter::CBitstreamConverter
+   m_convert_dovi = 0;
+   m_removeDovi = false;
+   m_removeHdr10Plus = false;
+-  m_dovi_el_type = ELType::TYPE_NONE;
+ }
+ 
+ CBitstreamConverter::~CBitstreamConverter()
+@@ -1043,14 +1018,13 @@ bool CBitstreamConverter::BitstreamConve
+         }
+       }
+ 
+-      if (write_buf && (m_convert_dovi || m_dovi_el_type == ELType::TYPE_NONE))
++      if (write_buf && m_convert_dovi)
+       {
+         if (unit_type == HEVC_NAL_UNSPEC62)
+         {
+ #ifdef HAVE_LIBDOVI
+           // Convert the RPU itself
+           rpu_data = convert_dovi_rpu_nal(buf, nal_size, m_convert_dovi);
+-          m_dovi_el_type = get_dovi_el_type(buf, nal_size);
+           if (rpu_data)
+           {
+             buf_to_write = rpu_data->data;
+@@ -1058,7 +1032,7 @@ bool CBitstreamConverter::BitstreamConve
+           }
+ #endif
+         }
+-        else if (m_convert_dovi && unit_type == HEVC_NAL_UNSPEC63)
++        else if (unit_type == HEVC_NAL_UNSPEC63)
+         {
+           // Ignore the enhancement layer, may or may not help
+           write_buf = false;
+diff -Naurp kodi/xbmc/utils/BitstreamConverter.h kodi-patch/xbmc/utils/BitstreamConverter.h
+--- kodi/xbmc/utils/BitstreamConverter.h	2024-04-15 08:11:27.976674737 +0000
++++ kodi-patch/xbmc/utils/BitstreamConverter.h	2024-04-15 08:12:11.704342864 +0000
+@@ -79,13 +79,6 @@ typedef struct
+   int frame_crop_bottom_offset;
+ } sps_info_struct;
+ 
+-enum ELType : int
+-{
+-  TYPE_NONE = 0,
+-  TYPE_FEL,
+-  TYPE_MEL
+-};
+-
+ class CBitstreamParser
+ {
+ public:
+@@ -117,7 +110,6 @@ public:
+   void SetConvertDovi(int value) { m_convert_dovi = value; }
+   void SetRemoveDovi(bool value) { m_removeDovi = value; }
+   void SetRemoveHdr10Plus(bool value) { m_removeHdr10Plus = value; }
+-  enum ELType GetDoviElType() const { return m_dovi_el_type; }
+ 
+   static bool       mpeg2_sequence_header(const uint8_t *data, const uint32_t size, mpeg2_sequence *sequence);
+   static bool       h264_sequence_header(const uint8_t *data, const uint32_t size, h264_sequence *sequence);
+@@ -163,8 +155,7 @@ protected:
+   bool              m_convert_bytestream;
+   AVCodecID         m_codec;
+   bool              m_start_decode;
+-  int               m_convert_dovi;
+-  bool              m_removeDovi;
+-  bool              m_removeHdr10Plus;
+-  enum ELType       m_dovi_el_type;
++  int m_convert_dovi;
++  bool m_removeDovi;
++  bool m_removeHdr10Plus;
+ };
+diff -Naurp kodi/xbmc/utils/StreamDetails.cpp kodi-patch/xbmc/utils/StreamDetails.cpp
+--- kodi/xbmc/utils/StreamDetails.cpp	2024-04-15 08:11:27.984674677 +0000
++++ kodi-patch/xbmc/utils/StreamDetails.cpp	2024-04-15 08:12:11.712342803 +0000
+@@ -670,6 +670,6 @@ std::string CStreamDetails::HdrTypeToStr
+       return "hlg";
+     case StreamHdrType::HDR_TYPE_NONE:
+     default:
+-      return "sdr";
++      return "";
+   }
+ }
+diff -Naurp kodi/xbmc/windowing/GraphicContext.h kodi-patch/xbmc/windowing/GraphicContext.h
+--- kodi/xbmc/windowing/GraphicContext.h	2024-04-15 08:11:27.996674585 +0000
++++ kodi-patch/xbmc/windowing/GraphicContext.h	2024-04-15 08:12:11.728342682 +0000
+@@ -13,7 +13,6 @@
+ #include "threads/CriticalSection.h"
+ #include "utils/ColorUtils.h"
+ #include "utils/Geometry.h" // for CRect/CPoint
+-#include "utils/StreamDetails.h"
+ #include "utils/TransformMatrix.h" // for the members m_guiTransform etc.
+ 
+ #include <map>
+@@ -132,8 +131,6 @@ public:
+   RENDER_STEREO_VIEW GetStereoView()  { return m_stereoView; }
+   void SetStereoMode(RENDER_STEREO_MODE mode) { m_nextStereoMode = mode; }
+   RENDER_STEREO_MODE GetStereoMode()  { return m_stereoMode; }
+-  void SetHDRType(StreamHdrType hdrType)  { m_hdrType = hdrType; }
+-  StreamHdrType GetHDRType()  { return m_hdrType; }
+   void RestoreCameraPosition();
+   void SetStereoFactor(float factor);
+   void RestoreStereoFactor();
+@@ -235,7 +232,6 @@ protected:
+   RENDER_STEREO_VIEW m_stereoView = RENDER_STEREO_VIEW_OFF;
+   RENDER_STEREO_MODE m_stereoMode = RENDER_STEREO_MODE_OFF;
+   RENDER_STEREO_MODE m_nextStereoMode = RENDER_STEREO_MODE_OFF;
+-  StreamHdrType m_hdrType;
+ 
+   bool m_isTransferPQ{false};
+ };
+diff -Naurp kodi/xbmc/windowing/amlogic/WinSystemAmlogicGLESContext.cpp kodi-patch/xbmc/windowing/amlogic/WinSystemAmlogicGLESContext.cpp
+--- kodi/xbmc/windowing/amlogic/WinSystemAmlogicGLESContext.cpp	2024-04-15 08:11:28.000674555 +0000
++++ kodi-patch/xbmc/windowing/amlogic/WinSystemAmlogicGLESContext.cpp	2024-04-15 08:12:11.728342682 +0000
+@@ -18,6 +18,12 @@
+ using namespace KODI;
+ using namespace KODI::WINDOWING::AML;
+ 
++CWinSystemAmlogicGLESContext::CWinSystemAmlogicGLESContext()
++:  m_cs(-1)
++,  m_cd(-1)
++{
++}
++
+ void CWinSystemAmlogicGLESContext::Register()
+ {
+   KODI::WINDOWING::CWindowSystemFactory::RegisterWindowSystem(CreateWinSystem, "aml");
+@@ -88,11 +94,16 @@ bool CWinSystemAmlogicGLESContext::Creat
+       amhdmitx0_frac_rate_policy.Set(fractional_rate);
+   }
+ 
+-  StreamHdrType hdrType = CServiceBroker::GetWinSystem()->GetGfxContext().GetHDRType();
+-  bool force_mode_switch_by_dv = false;
+-  if ((m_hdrType == StreamHdrType::HDR_TYPE_DOLBYVISION && hdrType != StreamHdrType::HDR_TYPE_DOLBYVISION) ||
+-      (m_hdrType != StreamHdrType::HDR_TYPE_DOLBYVISION && hdrType == StreamHdrType::HDR_TYPE_DOLBYVISION))
+-      force_mode_switch_by_dv = true;
++  // check for colour subsampling/depth change
++  CSysfsPath amhdmitx0_cs{"/sys/class/amhdmitx/amhdmitx0/cs"};
++  CSysfsPath amhdmitx0_cd{"/sys/class/amhdmitx/amhdmitx0/cd"};
++  int cs = 0;
++  int cd = 0;
++  if (amhdmitx0_cs.Exists() && amhdmitx0_cd.Exists())
++  {
++    cs = amhdmitx0_cs.Get<int>().value();
++    cd = amhdmitx0_cd.Get<int>().value();
++  }
+ 
+   // get current used resolution
+   if (!aml_get_native_resolution(&current_resolution))
+@@ -104,11 +115,11 @@ bool CWinSystemAmlogicGLESContext::Creat
+   CLog::Log(LOGDEBUG, "CWinSystemAmlogicGLESContext::{}: "
+     "m_bWindowCreated: {}, "
+     "frac rate {:d}({:d}), "
+-    "hdrType: {}({}), force mode switch: {}",
++    "cs: {:d}({:d}), cd: {:d}({:d})",
+     __FUNCTION__,
+     m_bWindowCreated,
+     fractional_rate, cur_fractional_rate,
+-    CStreamDetails::HdrTypeToString(hdrType), CStreamDetails::HdrTypeToString(m_hdrType), force_mode_switch_by_dv);
++    cs, m_cs, cd, m_cd);
+   CLog::Log(LOGDEBUG, "CWinSystemAmlogicGLESContext::{}: "
+     "cur: iWidth: {:04d}, iHeight: {:04d}, iScreenWidth: {:04d}, iScreenHeight: {:04d}, fRefreshRate: {:02.2f}, dwFlags: {:02x}",
+     __FUNCTION__,
+@@ -125,7 +136,7 @@ bool CWinSystemAmlogicGLESContext::Creat
+       m_bFullScreen == fullScreen && current_resolution.fRefreshRate == res.fRefreshRate &&
+       (current_resolution.dwFlags & D3DPRESENTFLAG_MODEMASK) == (res.dwFlags & D3DPRESENTFLAG_MODEMASK) &&
+       m_stereo_mode == stereo_mode && m_bWindowCreated &&
+-      !force_mode_switch_by_dv &&
++      ((m_cs != -1 && m_cd != -1) && (m_cs == cs && m_cd == cd)) &&
+       (fractional_rate == cur_fractional_rate))
+   {
+     CLog::Log(LOGDEBUG, "CWinSystemAmlogicGLESContext::{}: No need to create a new window", __FUNCTION__);
+@@ -139,7 +150,7 @@ bool CWinSystemAmlogicGLESContext::Creat
+   if ((current_resolution.iWidth == res.iWidth && current_resolution.iHeight == res.iHeight &&
+        current_resolution.iScreenWidth == res.iScreenWidth && current_resolution.iScreenHeight == res.iScreenHeight &&
+        current_resolution.fRefreshRate == res.fRefreshRate) &&
+-       (force_mode_switch_by_dv ||
++       (((m_cs != -1 && m_cd != -1) && (m_cs != cs || m_cd != cd)) ||
+        (fractional_rate != cur_fractional_rate)))
+   {
+     m_force_mode_switch = true;
+@@ -170,7 +181,12 @@ bool CWinSystemAmlogicGLESContext::Creat
+   }
+ 
+   // backup data after mode switch
+-  m_hdrType = hdrType;
++  if (amhdmitx0_cs.Exists() && amhdmitx0_cd.Exists())
++  {
++    m_cs = cs;
++    m_cd = cd;
++  }
++
+   m_stereo_mode = stereo_mode;
+   m_bFullScreen = fullScreen;
+ 
+diff -Naurp kodi/xbmc/windowing/amlogic/WinSystemAmlogicGLESContext.h kodi-patch/xbmc/windowing/amlogic/WinSystemAmlogicGLESContext.h
+--- kodi/xbmc/windowing/amlogic/WinSystemAmlogicGLESContext.h	2024-04-15 08:11:28.000674555 +0000
++++ kodi-patch/xbmc/windowing/amlogic/WinSystemAmlogicGLESContext.h	2024-04-15 08:12:11.728342682 +0000
+@@ -11,7 +11,6 @@
+ #include "utils/EGLUtils.h"
+ #include "rendering/gles/RenderSystemGLES.h"
+ #include "utils/GlobalsHandling.h"
+-#include "utils/StreamDetails.h"
+ #include "WinSystemAmlogic.h"
+ 
+ namespace KODI
+@@ -24,7 +23,7 @@ namespace AML
+ class CWinSystemAmlogicGLESContext : public CWinSystemAmlogic, public CRenderSystemGLES
+ {
+ public:
+-  CWinSystemAmlogicGLESContext() = default;
++  CWinSystemAmlogicGLESContext();
+   virtual ~CWinSystemAmlogicGLESContext() = default;
+ 
+   static void Register();
+@@ -54,7 +53,8 @@ protected:
+ 
+ private:
+   CEGLContextUtils m_pGLContext;
+-  StreamHdrType m_hdrType = StreamHdrType::HDR_TYPE_NONE;
++  int m_cs;
++  int m_cd;
+ };
+ 
+ }
