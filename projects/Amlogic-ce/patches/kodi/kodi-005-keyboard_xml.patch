@@ -1,57 +1,13 @@
-diff -Naurp kodi-21.0b1-Omega/system/Lircmap.xml kodi-21.0b1-Omega-patch/system/Lircmap.xml
---- kodi-21.0b1-Omega/system/Lircmap.xml	2023-10-28 06:55:13.243086835 +0000
-+++ kodi-21.0b1-Omega-patch/system/Lircmap.xml	2023-10-28 07:17:43.000000000 +0000
-@@ -554,9 +554,9 @@
- 		<clear>KEY_DELETE</clear>
- 		<clear>KEY_ESC</clear>
- 		<start>KEY_MEDIA</start>
--		<start>KEY_HOME</start>
-+		<topmenu>KEY_HOME</topmenu>
- 		<back>KEY_EXIT</back>
--		<back>KEY_BACK</back>
-+		<rootmenu>KEY_BACK</rootmenu>
- 		<back>KEY_BACKSPACE</back>
- 		<back>KEY_ESC</back>
- 		<back>KEY_E</back>
-@@ -588,23 +588,24 @@
- 		<info>KEY_INFO</info>
- 		<info>KEY_PROPS</info>
- 		<display>KEY_ZOOM</display>
--		<display>KEY_ANGLE</display>
-+		<display>KEY_PROGRAM</display>
- 		<mute>KEY_MUTE</mute>
- 		<power>KEY_POWER</power>
- 		<power>KEY_SLEEP</power>
- 		<power>KEY_WAKEUP</power>
- 		<eject>KEY_EJECTCD</eject>
--		<eject>KEY_EJECTCLOSECD</eject>
--		<menu>KEY_DVD</menu>
-+		<eject>KEY_HOMEPAGE</eject>
-+		<dvdmenu>KEY_DVD</dvdmenu>
- 		<menu>KEY_MENU</menu>
- 		<myvideo>KEY_VIDEO</myvideo>
--		<mymusic>KEY_AUDIO</mymusic>
-+		<language>KEY_AUDIO</language>
- 		<mymusic>KEY_MP3</mymusic>
- 		<mypictures>KEY_CAMERA</mypictures>
- 		<mypictures>KEY_IMAGES</mypictures>
- 		<livetv>KEY_TUNER</livetv>
- 		<mytv>KEY_TV</mytv>
- 		<mytv>KEY_PVR</mytv>
-+        <epgsearch>KEY_FAVORITES</epgsearch>
- 		<teletext>KEY_TEXT</teletext>
- 		<one>KEY_1</one>
- 		<one>KEY_NUMERIC_1</one>
-diff -Naurp kodi-21.0b1-Omega/system/keymaps/keyboard.xml kodi-21.0b1-Omega-patch/system/keymaps/keyboard.xml
---- kodi-21.0b1-Omega/system/keymaps/keyboard.xml	2023-10-18 03:31:05.000000000 +0000
-+++ kodi-21.0b1-Omega-patch/system/keymaps/keyboard.xml	2023-10-28 07:07:52.000000000 +0000
+diff -Naurp kodi/system/keymaps/keyboard.xml kodi-patch/system/keymaps/keyboard.xml
+--- kodi/system/keymaps/keyboard.xml	2024-04-12 08:31:54.000000000 +0000
++++ kodi-patch/system/keymaps/keyboard.xml	2024-04-15 07:43:53.000000000 +0000
 @@ -52,6 +52,7 @@
        <m>Menu</m>
        <n mod="ctrl">ActivateWindow(PlayerControls)</n>
        <s>ActivateWindow(ShutdownMenu)</s>
 +      <s mod="longpress">ShutDown()</s>
        <s mod="alt">ActivateWindow(Settings)</s>
-       <escape>PreviousMenu</escape>
+       <escape>Back</escape>
        <escape mod="longpress">Back</escape>
 @@ -104,6 +105,11 @@
        <j>ActivateWindow(RadioChannels)</j>
@@ -73,7 +29,7 @@ diff -Naurp kodi-21.0b1-Omega/system/keymaps/keyboard.xml kodi-21.0b1-Omega-patc
        <f11>HDRToggle</f11>
      </keyboard>
    </global>
-@@ -367,6 +374,7 @@
+@@ -368,6 +375,7 @@
        <o>PlayerProcessInfo</o>
        <o mod="ctrl,shift">PlayerDebug</o>
        <o mod="alt">PlayerDebugVideo</o>
@@ -81,7 +37,7 @@ diff -Naurp kodi-21.0b1-Omega/system/keymaps/keyboard.xml kodi-21.0b1-Omega-patc
        <z>AspectRatio</z>
        <zoom>AspectRatio</zoom>
        <t>ShowSubtitles</t>
-@@ -388,11 +396,11 @@
+@@ -381,7 +389,8 @@
        <down mod="longpress">NextSubtitle</down>
        <left mod="alt">PlayerControl(tempodown)</left>
        <right mod="alt">PlayerControl(tempoup)</right>
@@ -91,12 +47,7 @@ diff -Naurp kodi-21.0b1-Omega/system/keymaps/keyboard.xml kodi-21.0b1-Omega-patc
        <a mod="ctrl">AudioNextLanguage</a>
        <leftquote>AudioNextLanguage</leftquote>
        <escape>Fullscreen</escape>
-       <c>Playlist</c>
--      <v>ActivateWindow(Teletext)</v>
-       <v mod="ctrl">VideoNextStream</v>
-       <text>ActivateWindow(Teletext)</text>
-       <up mod="ctrl">SubtitleShiftUp</up>
-@@ -584,7 +592,7 @@
+@@ -586,7 +595,7 @@
        <zoom>AspectRatio</zoom>
        <t>ShowSubtitles</t>
        <l>NextSubtitle</l>
@@ -105,7 +56,7 @@ diff -Naurp kodi-21.0b1-Omega/system/keymaps/keyboard.xml kodi-21.0b1-Omega-patc
        <escape>Fullscreen</escape>
        <return>Select</return>
        <enter>Select</enter>      <!-- backspace>Fullscreen</backspace -->
-@@ -688,20 +696,22 @@
+@@ -690,21 +699,23 @@
    </NumericInput>
    <FullscreenLiveTV>
      <keyboard>
@@ -124,83 +75,12 @@ diff -Naurp kodi-21.0b1-Omega/system/keymaps/keyboard.xml kodi-21.0b1-Omega-patc
        <return mod="longpress">ActivateWindow(PVROSDChannels)</return>
        <enter mod="longpress">ActivateWindow(PVROSDChannels)</enter>
 +      <a>AudioNextLanguage</a>
+       <leftquote>AudioNextLanguage</leftquote>
        <pageup>ChannelUp</pageup>
        <pagedown>ChannelDown</pagedown>
        <period mod="longpress">ChannelNumberSeparator</period>
        <numpadperiod>ChannelNumberSeparator</numpadperiod>
 +      <i mod="longpress">RunAddon(script.tvlink.conrol)</i>
      </keyboard>
-   </FullscreenLiveTV>
-   <FullscreenRadio>
-diff -Naurp kodi-21.0b1-Omega/system/keymaps/remote.xml kodi-21.0b1-Omega-patch/system/keymaps/remote.xml
---- kodi-21.0b1-Omega/system/keymaps/remote.xml	2023-10-28 06:55:13.263086953 +0000
-+++ kodi-21.0b1-Omega-patch/system/keymaps/remote.xml	2023-10-28 07:14:10.000000000 +0000
-@@ -44,7 +44,7 @@
-       <skipplus>SkipNext</skipplus>
-       <skipminus>SkipPrevious</skipminus>
-       <display>FullScreen</display>
--      <start>PreviousMenu</start>
-+      <topmenu>ActivateWindow(Home)</topmenu>
-       <record>Record</record>
-       <eject>EjectTray()</eject>
-       <volumeplus>VolumeUp</volumeplus>
-@@ -59,7 +59,7 @@
-       <livetv>ActivateWindow(TVChannels)</livetv>
-       <liveradio>ActivateWindow(RadioChannels)</liveradio>
-       <recordedtv>ActivateWindow(TVRecordings)</recordedtv>
--      <epgsearch>ActivateWindow(TVSearch)</epgsearch>
-+      <epgsearch>ActivateWindow(Favourites)</epgsearch>
-       <red>ActivateWindow(TVChannels)</red>
-       <green>ActivateWindow(Videos)</green>
-       <yellow>ActivateWindow(Music)</yellow>
-@@ -192,10 +192,11 @@
-       <menu>OSD</menu>
-       <contentsmenu>OSD</contentsmenu>
-       <rootmenu>OSD</rootmenu>
--      <start>OSD</start>
-+      <start>FirstPage</start>
-       <select>OSD</select>
--      <title>PlayerProcessInfo</title>
-+      <title>PlayerDebug</title>
-       <info>Info</info>
-+      <dvdmenu>PlayerProcessInfo</dvdmenu>
-       <guide>ActivateWindow(TVGuide)</guide>
-       <teletext>ActivateWindow(Teletext)</teletext>
-       <subtitle>NextSubtitle</subtitle>
-@@ -215,7 +216,7 @@
-       <menu>OSD</menu>
-       <contentsmenu>OSD</contentsmenu>
-       <rootmenu>OSD</rootmenu>
--      <start>OSD</start>
-+      <start>FirstPage</start>
-       <select>OSD</select>
-       <title>CodecInfo</title>
-       <info>Info</info>
-@@ -257,7 +258,7 @@
-       <menu>OSD</menu>
-       <contentsmenu>OSD</contentsmenu>
-       <rootmenu>OSD</rootmenu>
--      <start>OSD</start>
-+      <start>FirstPage</start>
-       <info>Info</info>
-       <guide>ActivateWindow(TVGuide)</guide>
-       <playlist>ActivateWindow(PVROSDChannels)</playlist>
-@@ -566,12 +567,14 @@
-   </Teletext>
-   <FullscreenLiveTV>
-     <remote>
--      <left>StepBack</left>
--      <right>StepForward</right>
--      <up>Up</up>
--      <down>Down</down>
-+      <left>ActivateWindow(PVROSDChannels)</left>
-+      <right>ActivateWindow(PVRChannelGuide)</right>
-+      <up>StepForward</up>
-+      <down>StepBack</down>
-       <pageplus>ChannelUp</pageplus>
-       <pageminus>ChannelDown</pageminus>
-+      <language>AudioNextLanguage</language>
-+      <eject>RunAddon(script.tvlink.conrol)</eject>
-     </remote>
    </FullscreenLiveTV>
    <FullscreenRadio>
