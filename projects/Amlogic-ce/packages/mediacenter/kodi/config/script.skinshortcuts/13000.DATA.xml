@@ -2,10 +2,10 @@
 	<shortcut>
 		<defaultID>service.libreelec.settings</defaultID>
 		<label>Система</label>
-		<label2>Программа</label2>
+		<label2>Пользовательский элемент</label2>
 		<icon>DefaultAddon.png</icon>
 		<thumb>thumb</thumb>
-		<action>RunAddOn(service.libreelec.settings)</action>
+		<action>RunAddOn(service.coreelec.settings)</action>
 		</shortcut>
 	<shortcut>
 		<defaultID>33060</defaultID>
