@@ -2,6 +2,7 @@
     <setting id="audiooutput.volumesteps">50</setting>
     <setting id="epg.epgupdate">180</setting>
     <setting id="pvrplayback.enableradiords">false</setting>
+    <setting id="pvrplayback.fps">1</setting>
     <setting id="pvrreminders.autorecord">false</setting>
     <setting id="services.airplay">false</setting>
     <setting id="videoplayer.stretch43">4</setting>
