@@ -81,6 +81,7 @@ diff -Naurp kodi/xbmc/cores/VideoPlayer/DVDDemuxers/DVDDemuxFFmpeg.h kodi-patch/
    bool     m_bAVI;
    bool     m_bSup;
 +  bool     m_bResetStream;
+   CDemuxStreamSSIF* m_pSSIF;
    int      m_speed;
 +  unsigned int m_oldStreams;
 +  unsigned int m_oldProgCount;
