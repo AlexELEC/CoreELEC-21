@@ -11,13 +11,13 @@
 
 # Welcome Message for e.g. SSH Server (up to 5 Lines)
   GREETING0="##############################################"
-  GREETING1="#                  CoreELEC                  #"
-  GREETING2="#            https://coreelec.org            #"
+  GREETING1="#                   CoreELEC                 #"
+  GREETING2="#            https://alexelec.tv             #"
   GREETING3="##############################################"
   GREETING4=""
 
 # Root password to integrate in the target system
-  ROOT_PASSWORD="coreelec"
+  ROOT_PASSWORD="mcpc"
 
 # Partition labels for USB/SD installation media
   DISTRO_BOOTLABEL="COREELEC"
@@ -267,4 +267,4 @@
 # Space separated list is supported,
 # e.g. ADDITIONAL_PACKAGES="PACKAGE1 PACKAGE2"
   ADDITIONAL_PACKAGES="u-boot-script dtc CoreELEC-Debug-Scripts inject_bl301 ceemmc
-                       nfs-utils dtb-xml megatools"
+                       nfs-utils dtb-xml megatools hid-remote tvlink MC HTOP wget"
