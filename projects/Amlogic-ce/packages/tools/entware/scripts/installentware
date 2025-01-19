@@ -4,12 +4,19 @@
 # Copyright (C) 2018-present Team CoreELEC (https://coreelec.org)
 
 export PATH=/opt/bin:/opt/sbin:$PATH
+INSTALL="/storage/generic.sh"
 
 [ ! -d /storage/.opt ] && mkdir -p /storage/.opt
 
 if [ ! -f /opt/bin/opkg ]; then
-  wget -O - http://bin.entware.net/@ENTWARE_ARCH@/installer/generic.sh | /bin/sh
-
+  wget --no-check-certificate "https://mirrors.bfsu.edu.cn/entware/@ENTWARE_ARCH@/installer/generic.sh" -O $INSTALL
+  chmod +x $INSTALL
+  sed -e "s|http:\/\/bin.entware.net|https:\/\/mirrors.bfsu.edu.cn\/entware|g" -i $INSTALL
+  sed -i '41ised -e "s|http:\/\/bin.entware.net|https:\/\/mirrors.bfsu.edu.cn\/entware|g" -i /opt/etc/opkg.conf' $INSTALL
+  /bin/sh $INSTALL
+  rm -f $INSTALL
+  sed -i '3i. /opt/etc/profile' /opt/etc/init.d/rc.unslung
+  sed -i '35i\    \sleep 2' /opt/etc/init.d/rc.func
   echo ""
   read -p "Would you like to reboot now to finish installation (recommended) [y/N]? " choice
   case "$choice" in

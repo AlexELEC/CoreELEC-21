@@ -1,5 +1,23 @@
 <settings version="2">
+    <setting id="audiooutput.volumesteps">50</setting>
+    <setting id="epg.epgupdate">180</setting>
+    <setting id="pvrplayback.enableradiords">false</setting>
+    <setting id="pvrplayback.fps">1</setting>
+    <setting id="pvrreminders.autorecord">false</setting>
+    <setting id="services.airplay">false</setting>
+    <setting id="videoplayer.stretch43">4</setting>
+    <setting id="filelists.allowfiledeletion">true</setting>
+    <setting id="videoplayer.teletextenabled">false</setting>
+    <setting id="addons.unknownsources">true</setting>
+    <setting id="addons.updatemode">1</setting>
+    <setting id="eventlog.enabled">false</setting>
+    <setting id="pvrmanager.backendchannelgroupsorder">false</setting>
+    <setting id="pvrmanager.usebackendchannelnumbers">true</setting>
   <general>
-    <settinglevel>2</settinglevel>
+    <settinglevel>3</settinglevel>
   </general>
+    <audio>
+        <mute>false</mute>
+        <fvolumelevel>0.500000</fvolumelevel>
+    </audio>
 </settings>
