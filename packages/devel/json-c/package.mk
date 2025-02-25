@@ -5,9 +5,9 @@
 
 PKG_NAME="json-c"
 PKG_VERSION="0.17"
-PKG_SHA256="bca9a584a8da64d8dff50082a06f6cea26fb735f74924afc6d01ae6be7a75885"
+PKG_SHA256="7550914d58fb63b2c3546f3ccfbe11f1c094147bd31a69dcd23714d7956159e6"
 PKG_LICENSE="MIT"
 PKG_SITE="https://github.com/json-c/json-c"
-PKG_URL="https://github.com/json-c/json-c/archive/json-c-${PKG_VERSION%-*}.tar.gz"
+PKG_URL="https://s3.amazonaws.com/json-c_releases/releases/json-c-${PKG_VERSION%-*}.tar.gz"
 PKG_DEPENDS_TARGET="toolchain"
 PKG_LONGDESC="Implements a reference counting object model that allows you to easily construct JSON objects in C."
