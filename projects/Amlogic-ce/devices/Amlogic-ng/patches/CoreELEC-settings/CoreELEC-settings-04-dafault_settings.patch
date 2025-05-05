@@ -1,0 +1,64 @@
+diff -Naurp CoreELEC-settings/src/defaults.py CoreELEC-settings-patch/src/defaults.py
+--- CoreELEC-settings/src/defaults.py	2024-06-07 10:32:15.040013396 +0000
++++ CoreELEC-settings-patch/src/defaults.py	2024-06-07 10:38:36.000000000 +0000
+@@ -48,10 +48,10 @@ services = {
+     'SAMBA_SMDB': '/usr/sbin/smbd',
+     'D_SAMBA_WORKGROUP': 'WORKGROUP',
+     'D_SAMBA_SECURE': '0',
+-    'D_SAMBA_USERNAME': 'coreelec',
+-    'D_SAMBA_PASSWORD': 'coreelec',
+-    'D_SAMBA_MINPROTOCOL': 'SMB2',
+-    'D_SAMBA_MAXPROTOCOL': 'SMB3',
++    'D_SAMBA_USERNAME': 'alexelec',
++    'D_SAMBA_PASSWORD': 'mapc',
++    'D_SAMBA_MINPROTOCOL': 'SMB1',
++    'D_SAMBA_MAXPROTOCOL': 'SMB1',
+     'D_SAMBA_AUTOSHARE': '1',
+     'SSH_DAEMON': '/usr/sbin/sshd',
+     'OPT_SSH_NOPASSWD': "-o 'PasswordAuthentication no'",
+@@ -86,6 +86,8 @@ system = {
+ 
+ about = {'ENABLED': True}
+ 
++tvserver = {'ENABLED': True}
++
+ hardware = {'ENABLED': True}
+ 
+ xdbus = {'ENABLED': True}
+@@ -99,4 +101,6 @@ _services = {
+     'crond': ['cron.service'],
+     'iptables': ['iptables.service'],
+     'tmate': ['tmate.service'],
++    'tvlink': ['tvlink.service'],
++    'hid-remote': ['hid-remote.service'],
+     }
+diff -Naurp CoreELEC-settings/src/resources/lib/modules/services.py CoreELEC-settings-patch/src/resources/lib/modules/services.py
+--- CoreELEC-settings/src/resources/lib/modules/services.py	2024-06-07 10:32:15.032013446 +0000
++++ CoreELEC-settings-patch/src/resources/lib/modules/services.py	2024-06-07 10:41:05.000000000 +0000
+@@ -108,7 +108,7 @@ class services:
+                         'samba_minprotocol': {
+                             'order': 6,
+                             'name': 32217,
+-                            'value': 'SMB2',
++                            'value': 'SMB1',
+                             'action': 'initialize_samba',
+                             'type': 'multivalue',
+                             'values': [
+@@ -125,7 +125,7 @@ class services:
+                         'samba_maxprotocol': {
+                             'order': 7,
+                             'name': 32218,
+-                            'value': 'SMB3',
++                            'value': 'SMB1',
+                             'action': 'initialize_samba',
+                             'type': 'multivalue',
+                             'values': [
+@@ -880,7 +880,7 @@ class services:
+             SSHchange = False
+             newpwd = xbmcDialog.input(self.oe._(746))
+             if newpwd:
+-                if newpwd == "coreelec":
++                if newpwd == "mcpc":
+                     self.oe.execute('cp -fp /usr/cache/shadow /storage/.cache/shadow')
+                     readout3 = "Retype password"
+                 else:

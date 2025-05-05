@@ -149,7 +149,7 @@
     ENTWARE_ARCH="aarch64-k3.10"
 
   # CoreELEC Subdevices
-    SUBDEVICES="Khadas_VIM4 Khadas_VIM1S"
+    SUBDEVICES=" "
 
   # TEE supported SoC
     TEE_SOC="A311D2 S905W2 S905X4 S905Y4 S928X"

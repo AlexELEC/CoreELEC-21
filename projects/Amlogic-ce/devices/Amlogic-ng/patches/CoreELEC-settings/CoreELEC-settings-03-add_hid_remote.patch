@@ -1,0 +1,101 @@
+diff -Naurp CoreELEC-settings/src/resources/lib/modules/services.py CoreELEC-settings-patch/src/resources/lib/modules/services.py
+--- CoreELEC-settings/src/resources/lib/modules/services.py	2024-04-15 14:36:50.000000000 +0000
++++ CoreELEC-settings-patch/src/resources/lib/modules/services.py	2024-04-15 15:23:32.000000000 +0000
+@@ -5,14 +5,9 @@
+ # Copyright (C) 2020-present Team CoreELEC (https://coreelec.org)
+ 
+ import os
+-import glob
+ import subprocess
+-import xbmc
+ import xbmcgui
+-import xbmcaddon
+ 
+-__scriptid__ = 'service.coreelec.settings'
+-__addon__ = xbmcaddon.Addon(id=__scriptid__)
+ xbmcDialog = xbmcgui.Dialog()
+ 
+ class services:
+@@ -302,6 +297,19 @@ class services:
+                             },
+                         },
+                     },
++                'hid-remote': {
++                    'order': 5,
++                    'name': 43010,
++                    'not_supported': [],
++                    'settings': {'hidremote_autostart': {
++                        'order': 1,
++                        'name': 43011,
++                        'value': None,
++                        'action': 'initialize_hidremote',
++                        'type': 'bool',
++                        'InfoText': 4311,
++                        }},
++                    },
+                 }
+ 
+             self.oe = oeMain
+@@ -318,6 +326,7 @@ class services:
+             self.initialize_avahi(service=1)
+             self.initialize_cron(service=1)
+             self.init_bluetooth(service=1)
++            self.initialize_hidremote(service=1)
+             self.oe.dbg_log('services::start_service', 'exit_function', self.oe.LOGDEBUG)
+         except Exception as e:
+             self.oe.dbg_log('services::start_service', 'ERROR: (%s)' % repr(e))
+@@ -440,6 +449,10 @@ class services:
+                 else:
+                     self.struct['bluez']['hidden'] = 'true'
+ 
++            # HID-REMOTE
++
++            self.struct['hid-remote']['settings']['hidremote_autostart']['value'] = self.oe.get_service_state('hid-remote')
++
+             self.oe.dbg_log('services::load_values', 'exit_function', self.oe.LOGDEBUG)
+         except Exception as e:
+             self.oe.dbg_log('services::load_values', 'ERROR: (%s)' % repr(e))
+@@ -542,6 +555,26 @@ class services:
+             self.oe.set_busy(0)
+             self.oe.dbg_log('services::initialize_cron', 'ERROR: (%s)' % repr(e), self.oe.LOGERROR)
+ 
++    def initialize_hidremote(self, **kwargs):
++        try:
++            self.oe.dbg_log('services::initialize_hidremote', 'enter_function', self.oe.LOGDEBUG)
++            self.oe.set_busy(1)
++            if 'listItem' in kwargs:
++                self.set_value(kwargs['listItem'])
++            options = {}
++            if self.struct['hid-remote']['settings']['hidremote_autostart']['value'] == '1':
++                subprocess.call(['/usr/bin/systemctl', 'stop', 'eventlircd.service'], close_fds=True)
++                state = 1
++            else:
++                subprocess.call(['/usr/bin/systemctl', 'start', 'eventlircd.service'], close_fds=True)
++                state = 0
++            self.oe.set_service('hid-remote', options, state)
++            self.oe.set_busy(0)
++            self.oe.dbg_log('services::initialize_hidremote', 'exit_function', self.oe.LOGDEBUG)
++        except Exception as e:
++            self.oe.set_busy(0)
++            self.oe.dbg_log('services::initialize_hidremote', 'ERROR: (%s)' % repr(e), self.oe.LOGERROR)
++
+     def init_bluetooth(self, **kwargs):
+         try:
+             self.oe.dbg_log('services::init_bluetooth', 'enter_function', self.oe.LOGDEBUG)
+diff -Naurp CoreELEC-settings/src/resources/lib/modules/tvserver.py CoreELEC-settings-patch/src/resources/lib/modules/tvserver.py
+--- CoreELEC-settings/src/resources/lib/modules/tvserver.py	2024-04-15 15:01:36.000000000 +0000
++++ CoreELEC-settings-patch/src/resources/lib/modules/tvserver.py	2024-04-15 15:21:02.000000000 +0000
+@@ -155,10 +155,10 @@ class tvserver:
+         root_dir = "/storage/.config/tvlink"
+         if not os.path.isdir(root_dir): os.makedirs(root_dir)
+ 
+-        tvl_patch = f"{oe.TEMP}TVLINK-{ver}.tar.bz2"
+-        downloaded = oe.download_file(last_dnl_url, tvl_patch)
++        tvl_patch = f"{self.oe.TEMP}TVLINK-{ver}.tar.bz2"
++        downloaded = self.oe.download_file(last_dnl_url, tvl_patch)
+         if not downloaded: return 'ERROR'
+-        oe.notify(oe._(32363), 'Install TVLINK...')
++        self.oe.notify(self.oe._(32363), 'Install TVLINK...')
+ 
+         try:
+             with tarfile.open(tvl_patch, "r:bz2") as tar:
