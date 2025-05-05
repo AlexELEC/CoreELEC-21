@@ -2,8 +2,8 @@
 # Copyright (C) 2018-present Team CoreELEC (https://coreelec.org)
 
 PKG_NAME="media_modules-aml"
-PKG_VERSION="2921edbbd8968cc451115b211426fa138c03aa3a"
-PKG_SHA256="96d279287cf85508f38dbb61049ef539de2140fbb1227c0eb43636c6009ad03e"
+PKG_VERSION="a387dea216e416f975377152d374557d448093c8"
+PKG_SHA256="873b70f482c4cc993d75073fe6b2744e536f00af946a25bc06e59841b46d3c8e"
 PKG_LICENSE="GPL"
 PKG_SITE="https://coreelec.org"
 PKG_URL="https://github.com/CoreELEC/media_modules-aml/archive/${PKG_VERSION}.tar.gz"
